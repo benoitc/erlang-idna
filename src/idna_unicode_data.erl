@@ -6,7 +6,6 @@
 
 -module(idna_unicode_data).
 -behaviour(gen_server).
--compile([{parse_transform, ct_expand}]).
 
 %% public api
 -export([combining_class/1, compat/1, composition/2, lowercase/1]).
@@ -57,8 +56,8 @@ start_link() ->
 %%============================================================================
 
 init(_) ->
-    Data = ct_expand:term(unicode_data()),
-    {ok, parse(Data)}.
+    self() ! load,
+    {ok, undefined}.
 
 handle_call({combining_class, C}, _From, Data) ->
     case lookup(C, Data) of
@@ -117,29 +116,11 @@ terminate(_Reason, _State) ->
 %% Helper functions
 %%============================================================================
 
-hex(Codepoint) ->
-    string:right(erlang:integer_to_list(Codepoint, 16), 4, $0).
-
-dehex(Strings) ->
-    [erlang:list_to_integer(String, 16) || String <- Strings].
-
-lookup(Codepoint, Data) ->
-    lists:keysearch(hex(Codepoint), 1, Data).
-
-lookup(Codepoint, Data, Fun) ->
-    case lookup(Codepoint, Data) of
-        {value, Props} ->
-            Fun(Props);
-        false ->
-            {reply, {error, bad_codepoint}, Data}
-    end.
-
+unicode_data_file() ->
+    filename:join([priv_dir(), "UnicodeData.txt"]).
 
 unicode_data() ->
-    EbinDir = filename:dirname(code:which(?MODULE)),
-    AppPath = filename:dirname(EbinDir),
-    DataFile = filename:join([AppPath, "priv", "UnicodeData.txt"]),
-    {ok, Data} =  file:read_file(DataFile),
+    {ok, Data} = file:read_file(unicode_data_file()),
     Data.
 
 parse(Data) ->
@@ -161,3 +142,30 @@ break_at(C, <<C, T/bytes>>, Prefix) ->
     {lists:reverse(Prefix), T};
 break_at(C, <<H, T/bytes>>, Prefix) ->
     break_at(C, T, [H | Prefix]).
+
+hex(Codepoint) ->
+    string:right(erlang:integer_to_list(Codepoint, 16), 4, $0).
+
+dehex(Strings) ->
+    [erlang:list_to_integer(String, 16) || String <- Strings].
+
+lookup(Codepoint, Data) ->
+    lists:keysearch(hex(Codepoint), 1, Data).
+
+lookup(Codepoint, Data, Fun) ->
+    case lookup(Codepoint, Data) of
+        {value, Props} ->
+            Fun(Props);
+        false ->
+            {reply, {error, bad_codepoint}, Data}
+    end.
+
+priv_dir() ->
+    case code:priv_dir(idna) of
+        {error, _} ->
+            %% try to get relative priv dir. useful for tests.
+            EbinDir = filename:dirname(code:which(?MODULE)),
+            AppPath = filename:dirname(EbinDir),
+            filename:join(AppPath, "priv");
+        Dir -> Dir
+    end.
