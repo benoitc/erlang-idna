@@ -9,7 +9,7 @@
                       idna_unicode_data]},
         {applications, [kernel,
                         stdlib]},
-        {included_applications, [xmerl, ets_lru]},
+        {included_applications, [ets_lru]},
         {mod, { idna, []}},
         {env, [{timeout, 150000},
                {max_connections, 25},

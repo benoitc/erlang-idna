@@ -31,7 +31,7 @@ to_ascii(Domain) ->
     end.
 
 utf8_to_ascii(Domain) ->
-    to_ascii(xmerl_ucs:from_utf8(Domain)).
+    to_ascii(idna_ucs:from_utf8(Domain)).
 
 
 to_ascii([], Acc) ->
@@ -42,7 +42,7 @@ to_ascii([Label|Labels], Acc) ->
     to_ascii(Labels, lists:reverse(label_to_ascii(Label), [$.|Acc])).
 
 label_to_ascii(Label) ->
-    case lists:all(fun(C) -> xmerl_ucs:is_ascii(C) end, Label) of
+    case lists:all(fun(C) -> idna_ucs:is_ascii(C) end, Label) of
         true ->
             Label;
         false ->
