@@ -17,6 +17,10 @@
 -export([init/1, handle_call/3, handle_cast/2, handle_info/2,
          code_change/3, terminate/2]).
 
+
+-include("idna_unicode_data.hrl").
+
+
 %%============================================================================
 %% Constants
 %%============================================================================
@@ -59,50 +63,39 @@ init(_) ->
     self() ! load,
     {ok, undefined}.
 
-handle_call({combining_class, C}, _From, Data) ->
-    case lookup(C, Data) of
-        {value, Props} ->
-            {reply, erlang:list_to_integer(element(?COMBINING_CLASS, Props)), Data};
-        false ->
-            {reply, 0, Data}
+handle_call({combining_class, C}, _From, _State) ->
+    case lookup(C) of
+        {ok, Props} ->
+            {reply, erlang:list_to_integer(element(?COMBINING_CLASS, Props)), _State};
+        _ ->
+            {reply, 0, _State}
     end;
-handle_call({compat, C}, _From, Data) ->
-    lookup(C, Data, fun(Props) ->
-                case element(?DECOMPOSITION, Props) of
-                    [] ->
-                        {reply, undefined, Data};
-                    Value ->
-                        Tokens = string:tokens(Value, " "),
-                        Codepoints = dehex(case hd(Value) of $< -> tl(Tokens); _ -> Tokens end),
-                        {reply, Codepoints, Data}
-                end
-        end);
-handle_call({composition, A, B}, _From, Data) ->
+handle_call({compat, C}, _From, _State) ->
+    case process_decomposition(C) of
+        undefined ->
+            {reply, undefined, _State};
+        Value ->
+            {reply, Value, _State}
+    end;
+handle_call({composition, A, B}, _From, _State) ->
     Key = lists:flatten([hex(A), " ", hex(B)]),
-    case lists:keysearch(Key, ?DECOMPOSITION, Data) of
-        {value, Props} ->
-            {reply, erlang:list_to_integer(element(1, Props), 16), Data};
-        false ->
-            {reply, undefined, Data}
+    case decomposition(Key) of
+        {ok, Props} ->
+            {reply, erlang:list_to_integer(element(1, Props), 16), _State};
+        {error, bad_codepoint} ->
+            {reply, undefined, _State}
     end;
-
-handle_call({lowercase, C}, _From, Data) ->
-    lookup(C, Data, fun(Props) ->
-                case element(?LOWERCASE_MAPPING, Props) of
-                    [] ->
-                        {reply, C, Data};
-                    Hex ->
-                        {reply, erlang:list_to_integer(Hex, 16), Data}
-                end
-        end);
+handle_call({lowercase, C}, _From, _State) ->
+    Value = process_lowercase(C),
+    {reply, Value, _State};
 handle_call(reload, _From, _State) ->
-    {reply, ok, parse(unicode_data())}.
+    {reply, ok, _State}.
 
 handle_cast(stop, State) ->
     {stop, normal, State}.
 
 handle_info(load, _State) ->
-    {noreply, parse(unicode_data())};
+    {noreply, []};
 handle_info(_Msg, State) ->
     {noreply, State}.
 
@@ -116,56 +109,38 @@ terminate(_Reason, _State) ->
 %% Helper functions
 %%============================================================================
 
-unicode_data_file() ->
-    filename:join([priv_dir(), "UnicodeData.txt"]).
-
-unicode_data() ->
-    {ok, Data} = file:read_file(unicode_data_file()),
-    Data.
-
-parse(Data) ->
-    parse(Data, []).
-
-parse(<<>>, Acc) ->
-    lists:reverse(Acc);
-parse(Data, Acc) ->
-    {Line, Etc} = break_at($\n, Data),
-    Values = re:split(Line, ";", [{return, list}]),
-    parse(Etc, [list_to_tuple(Values)|Acc]).
-
-break_at(C, Data) ->
-    break_at(C, Data, []).
-
-break_at(_, <<>>, Prefix) ->
-    {lists:reverse(Prefix), <<>>};
-break_at(C, <<C, T/bytes>>, Prefix) ->
-    {lists:reverse(Prefix), T};
-break_at(C, <<H, T/bytes>>, Prefix) ->
-    break_at(C, T, [H | Prefix]).
-
 hex(Codepoint) ->
     string:right(erlang:integer_to_list(Codepoint, 16), 4, $0).
 
 dehex(Strings) ->
     [erlang:list_to_integer(String, 16) || String <- Strings].
 
-lookup(Codepoint, Data) ->
-    lists:keysearch(hex(Codepoint), 1, Data).
+lookup(Codepoint) ->
+    codepoint(Codepoint).
 
-lookup(Codepoint, Data, Fun) ->
-    case lookup(Codepoint, Data) of
-        {value, Props} ->
-            Fun(Props);
-        false ->
-            {reply, {error, bad_codepoint}, Data}
+process_decomposition(Codepoint) ->
+    case lookup(Codepoint) of
+        {ok, Props} ->
+            case element(?DECOMPOSITION, Props) of
+                [] ->
+                    undefined;
+                Value ->
+                    Tokens = string:tokens(Value, " "),
+                    dehex(case hd(Value) of $< -> tl(Tokens); _ -> Tokens end)
+            end;
+        {error, bad_codepoint} ->
+            {error, bad_codepoint}
     end.
 
-priv_dir() ->
-    case code:priv_dir(idna) of
-        {error, _} ->
-            %% try to get relative priv dir. useful for tests.
-            EbinDir = filename:dirname(code:which(?MODULE)),
-            AppPath = filename:dirname(EbinDir),
-            filename:join(AppPath, "priv");
-        Dir -> Dir
+process_lowercase(Codepoint) ->
+    case lookup(Codepoint) of
+        {ok, Props} ->
+            case element(?LOWERCASE_MAPPING, Props) of
+                [] ->
+                    Codepoint;
+                Hex ->
+                    erlang:list_to_integer(Hex, 16)
+            end;
+        {error, bad_codepoint} ->
+            {error, bad_codepoint}
     end.
