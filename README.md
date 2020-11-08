@@ -56,6 +56,7 @@ Legacy support of IDNA 2003 is also available with  `to_ascii` and `to_unicode` 
 
 Update Unicode data
 
+wget -O test/IdnaTestV2.txt https://www.unicode.org/Public/idna/latest/IdnaTestV2.txt
 wget -O uc_spec/ArabicShaping.txt https://www.unicode.org/Public/UNIDATA/ArabicShaping.txt
 wget -O uc_spec/IdnaMappingTable.txt https://www.unicode.org/Public/idna/latest/IdnaMappingTable.txt
 wget -O uc_spec/Scripts.txt https://www.unicode.org/Public/UNIDATA/Scripts.txt
