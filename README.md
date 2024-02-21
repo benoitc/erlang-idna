@@ -1,6 +1,6 @@
 ## erlang-idna
 
-A pure Erlang IDNA implementation that folllow the [RFC5891](https://tools.ietf.org/html/rfc5891).
+A pure Erlang IDNA implementation that follow the [RFC5891](https://tools.ietf.org/html/rfc5891).
 
 * support IDNA 2008 and IDNA 2003.
 * label validation:
