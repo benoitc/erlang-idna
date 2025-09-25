@@ -124,13 +124,6 @@ parse_unicode(S) ->
 %parse_unicode(S0) ->
 %  ?trim(unicode:characters_to_list(list_to_binary(S0)), both).
 
-to_unicode(S) ->
-  case lists:all(fun(C) -> idna_ucs:is_unicode(C) end, S) of
-    true -> S;
-    false -> idna_ucs:from_utf8(S)
-
-  end.
-
 parse_status(" ") -> [];
 parse_status("") -> [];
 parse_status("[]") -> [];

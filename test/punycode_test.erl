@@ -5,7 +5,7 @@
 -module(punycode_test).
 -author("benoitc").
 
--export([punicode_encode_test/0, punicode_decode_test/0]).
+
 
 -include_lib("eunit/include/eunit.hrl").
 

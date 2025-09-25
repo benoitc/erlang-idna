@@ -370,9 +370,6 @@ lowercase_bin(CP1, Bin, Changed) ->
   end.
 
 
-append(Char, <<>>) when is_integer(Char) -> [Char];
-append(Char, <<>>) when is_list(Char) -> Char;
-append(Char, Bin) when is_binary(Bin) -> [Char,Bin];
 append(Char, Str) when is_integer(Char) -> [Char|Str];
 append(GC, Str) when is_list(GC) -> GC ++ Str.
 

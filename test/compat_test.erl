@@ -6,7 +6,7 @@
 -author("benoitc").
 
 %% API
--export([to_ascii_test/0, to_unicode_test/0]).
+
 
 
 -include_lib("eunit/include/eunit.hrl").

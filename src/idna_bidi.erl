@@ -24,14 +24,10 @@ check_bidi(Label, CheckLtr) ->
   end.
 
 check_rtl([C | Rest], Label) ->
-  case idna_data:bidirectional(C) of
-    false ->
-      erlang:exit(bidi_error("unknown directionality in label=~p c=~w~n", [Label, C]));
-    Dir ->
-      case lists:member(Dir, ["R", "AL", "AN"]) of
-        true -> true;
-        false -> check_rtl(Rest, Label)
-      end
+  Dir = idna_data:bidirectional(C),
+  case lists:member(Dir, ["R", "AL", "AN"]) of
+    true -> true;
+    false -> check_rtl(Rest, Label)
   end;
 check_rtl([], _Label) ->
   false.
