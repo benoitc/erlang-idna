@@ -408,7 +408,8 @@ uts46_remap_1([Cp|Rs], Std3Rules, Transitional) ->
         (Status =:= 'M') orelse
           (Status =:= '3' andalso Std3Rules =:= false) orelse
           (Status =:= 'D' andalso Transitional =:= true)) ->
-      Replacement ++ uts46_remap_1(Rs, Std3Rules, Transitional);
+      %% Recursively process replacement characters (they may have their own mappings)
+      uts46_remap_1(Replacement ++ Rs, Std3Rules, Transitional);
     (Status =:= 'I') ->
       uts46_remap_1(Rs, Std3Rules, Transitional);
     true ->
