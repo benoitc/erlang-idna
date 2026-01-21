@@ -1,5 +1,10 @@
 # CHANGELOG
 
+== 7.1.0 - 2026-01-21
+
+- update to Unicode 17.0.0
+- fix recursive processing of UTS #46 character mappings
+
 == 7.0.0 - unreleased
 
 - remove unicode_compat. only support Erlang >= 20

@@ -54,18 +54,55 @@ Legacy support of IDNA 2003 is also available with  `to_ascii` and `to_unicode` 
 
 
 
-Update Unicode data
+## Updating Unicode Data
 
-wget -O test/IdnaTestV2.txt https://www.unicode.org/Public/idna/latest/IdnaTestV2.txt
-wget -O uc_spec/ArabicShaping.txt https://www.unicode.org/Public/UNIDATA/ArabicShaping.txt
-wget -O uc_spec/IdnaMappingTable.txt https://www.unicode.org/Public/idna/latest/IdnaMappingTable.txt
-wget -O uc_spec/Scripts.txt https://www.unicode.org/Public/UNIDATA/Scripts.txt
-wget -O uc_spec/UnicodeData.txt https://www.unicode.org/Public/UNIDATA/UnicodeData.txt
+This library currently supports **Unicode 17.0.0**. To update to a new Unicode version, follow these steps:
 
-git clone https://github.com/kjd/idna.git
-./idna/tools/idna-data make-table --version 13.0.0 > uc_spec/idna-table.txt
+### 1. Download Unicode Data Files
 
+Replace `VERSION` with the target version (e.g., `17.0.0`):
+
+```bash
+# Core Unicode data files
+wget -O uc_spec/UnicodeData.txt https://www.unicode.org/Public/VERSION/ucd/UnicodeData.txt
+wget -O uc_spec/ArabicShaping.txt https://www.unicode.org/Public/VERSION/ucd/ArabicShaping.txt
+wget -O uc_spec/Scripts.txt https://www.unicode.org/Public/VERSION/ucd/Scripts.txt
+
+# IDNA-specific files (note: path changed in Unicode 17.0.0)
+wget -O uc_spec/IdnaMappingTable.txt https://www.unicode.org/Public/VERSION/idna/IdnaMappingTable.txt
+wget -O test/IdnaTestV2.txt https://www.unicode.org/Public/VERSION/idna/IdnaTestV2.txt
+```
+
+### 2. Generate IDNA Table
+
+Use the [kjd/idna](https://github.com/kjd/idna) Python tool to generate the IDNA table:
+
+```bash
+git clone --depth 1 https://github.com/kjd/idna.git /tmp/kjd-idna
+python3 /tmp/kjd-idna/tools/idna-data make-table --version VERSION > uc_spec/idna-table.txt
+rm -rf /tmp/kjd-idna
+```
+
+Note: The tool may need additional Unicode data files. If it fails, download the required files to `uc_spec/` and use the `--source` option:
+
+```bash
+python3 /tmp/kjd-idna/tools/idna-data make-table --version VERSION --source uc_spec > uc_spec/idna-table.txt
+```
+
+### 3. Regenerate Erlang Modules
+
+```bash
 cd uc_spec
 ./gen_idnadata_mod.escript
 ./gen_idna_table_mod.escript
 ./gen_idna_mapping_mod.escript
+cd ..
+```
+
+### 4. Run Tests
+
+```bash
+rebar3 eunit
+```
+
+If tests fail due to new Unicode test cases, review the failures and update `test/uts46_test.erl` skip lists if needed (some edge cases may not be supported).
