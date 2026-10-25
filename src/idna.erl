@@ -543,17 +543,21 @@ check_label_length(_) ->
 alabel(Label0) ->
   Label = case lists:all(fun(C) -> idna_ucs:is_ascii(C) end, Label0) of
             true ->
+              ok = check_label_length(Label0),
               _ = try ulabel(Label0)
                   catch
                     _:Error ->
                       ErrorMsg = error_msg("The label ~p  is not a valid A-label: ulabel error=~p", [Label0, Error]),
                       erlang:exit({bad_label, {alabel, ErrorMsg}})
                   end,
-              ok = check_label_length(Label0),
 
               Label0;
             false ->
               ok = check_label(Label0),
+              %% Every code point needs at least one output character, so a
+              %% label longer than 63 code points can never be a valid
+              %% A-label. Reject it before the (superlinear) encoding.
+              ok = check_label_length(Label0),
               ?ACE_PREFIX ++ punycode:encode(Label0)
           end,
   ok = check_label_length(Label),
@@ -590,6 +594,11 @@ ulabel([]) -> [];
 ulabel(Label0) ->
   Label = case lists:all(fun(C) -> idna_ucs:is_ascii(C) end, Label0) of
             true ->
+              %% An A-label is a DNS label, so it is at most 63 octets.
+              %% Check this before decoding: the Punycode transform is
+              %% superlinear in the label length, and an unbounded
+              %% label would let a caller burn CPU on invalid input.
+              ok = check_label_length(Label0),
               case Label0 of
                 [$x,$n,$-,$-|Label1] ->
                   punycode:decode(lowercase(Label1));
