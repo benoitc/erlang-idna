@@ -39,7 +39,9 @@ encode(Input) ->
              false -> Output0
            end,
   H = B,
-  encode(Input, Output, H, B, ?INITIAL_N, 0, ?INITIAL_BIAS).
+  %% The output is built in reverse and flipped once at the end, so that
+  %% appending a character is O(1) instead of O(length(Output)).
+  lists:reverse(encode(Input, lists:reverse(Output), H, B, ?INITIAL_N, 0, ?INITIAL_BIAS)).
 
 
 encode(Input, Output, H, B, N, Delta, Bias) when H < length(Input) ->
@@ -76,14 +78,14 @@ encode2(Rest, Output, H, B, N, Delta, Bias, Q, K) ->
   case  Q < T of
     true ->
       CodePoint = to_digit(Q),
-      Output2 = Output ++ [CodePoint],
+      Output2 = [CodePoint | Output],
       Bias2 = adapt(Delta, H +1, H == B),
       Delta2 = 0,
       H2 = H + 1,
       encode1(Rest, Output2, H2, B, N, Delta2, Bias2);
     false ->
       CodePoint = to_digit(T + ((Q - T) rem (?BASE - T))),
-      Output2 = Output ++ [CodePoint],
+      Output2 = [CodePoint | Output],
       Q2 = (Q - T) div (?BASE - T),
       encode2(Rest, Output2, H, B, N, Delta, Bias, Q2, K + ?BASE)
   end.
@@ -131,7 +133,7 @@ decode([C|Rest], Output, N, Bias, I0, OldI, Weight, K) ->
                   true ->
                     exit(overflow)
                 end,
-      Output2 = insert(Output, N2, [], I2),
+      Output2 = insert(Output, N2, I2),
       decode(Rest, Output2, N2, Bias2, I2+1);
     false ->
       case Weight > (?MAX  div (?BASE - T)) of
@@ -142,12 +144,16 @@ decode([C|Rest], Output, N, Bias, I0, OldI, Weight, K) ->
       end
   end.
 
-insert(Tail, CP, Head, 0) ->
-  Head ++ [CP | Tail];
-insert([], _CP, _Head, I) when I > 0->
-  exit(overflow);
-insert([C | Tail], CP, Head, I) ->
-  insert(Tail, CP, Head ++ [C], I - 1).
+%% Insert CP at position I. lists:split/2 walks the prefix once, so one
+%% insertion costs O(I) rather than the O(I^2) of rebuilding the prefix
+%% with ++ for every element.
+insert(Output, CP, I) ->
+  case I > length(Output) of
+    true -> exit(overflow);
+    false ->
+      {Head, Tail} = lists:split(I, Output),
+      Head ++ [CP | Tail]
+  end.
 
 
 digit(C) when C >= $0, C =< $9 -> C - $0 + 26;
