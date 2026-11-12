@@ -127,6 +127,9 @@ decode([], Output, _, _, _) -> Output;
 decode(Input, Output, N, Bias, I) ->
   decode(Input, Output, N, Bias, I, I, 1, ?BASE).
 
+decode([], _Output, _N, _Bias, _I0, _OldI, _Weight, _K) ->
+  %% The input ended in the middle of a variable-length integer.
+  exit(badarg);
 decode([C|Rest], Output, N, Bias, I0, OldI, Weight, K) ->
   Digit = digit(C),
   I1 = case Digit > ((?MAX - I0 ) div Weight) of

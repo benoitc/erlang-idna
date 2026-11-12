@@ -178,4 +178,7 @@ punycode_strict_decode_test() ->
   ?assertEqual("abc", punycode:decode("abc-")),
   %% A decoded value must be a Unicode scalar value.
   ?assertExit(badarg, punycode:decode(punycode:encode([16#D800]))),
-  ?assertEqual([16#10FFFF], punycode:decode(punycode:encode([16#10FFFF]))).
+  ?assertEqual([16#10FFFF], punycode:decode(punycode:encode([16#10FFFF]))),
+  %% Input that ends inside a variable-length integer.
+  ?assertExit(badarg, punycode:decode("z")),
+  ?assertExit(badarg, punycode:decode("abc-z")).
