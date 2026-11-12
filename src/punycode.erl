@@ -39,20 +39,23 @@ encode(Input) ->
              false -> Output0
            end,
   H = B,
+  %% Each round of the encoder handles the next smallest code point not yet
+  %% handled. Sort the distinct non-basic code points once and walk them in
+  %% order, instead of filtering the whole input for its minimum each round.
+  NonBasic = lists:usort([C || C <- Input, C >= ?INITIAL_N]),
   %% The output is built in reverse and flipped once at the end, so that
   %% appending a character is O(1) instead of O(length(Output)).
-  lists:reverse(encode(Input, lists:reverse(Output), H, B, ?INITIAL_N, 0, ?INITIAL_BIAS)).
+  lists:reverse(encode(NonBasic, Input, lists:reverse(Output), H, B, ?INITIAL_N, 0, ?INITIAL_BIAS)).
 
 
-encode(Input, Output, H, B, N, Delta, Bias) when H < length(Input) ->
-  M = lists:min(lists:filter(fun(C) -> C >= N end, Input)),
+encode([M | NonBasic], Input, Output, H, B, N, Delta, Bias) ->
   Delta1 = case (M - N) > ((?MAX - Delta) / (H +1)) of
              false -> Delta +  (M - N) * (H + 1);
              true -> exit(oveflow)
            end,
   {Output2, H2, Delta2, N2, Bias2} = encode1(Input, Output, H, B, M, Delta1, Bias),
-  encode(Input, Output2, H2, B, N2, Delta2, Bias2);
-encode(_, Output, _, _, _, _, _) ->
+  encode(NonBasic, Input, Output2, H2, B, N2, Delta2, Bias2);
+encode([], _, Output, _, _, _, _, _) ->
   Output.
 
 encode1([C|Rest], Output, H, B, N, Delta, Bias) when C < N ->
