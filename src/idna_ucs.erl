@@ -53,6 +53,9 @@ to_utf8(Ch) -> char_to_utf8(Ch).
 
 from_utf8(Bin) when is_binary(Bin) -> from_utf8(binary_to_list(Bin));
 from_utf8(List) ->
+  %% UTF-8 is a sequence of octets: anything else is not UTF-8.
+  lists:all(fun(B) -> is_integer(B) andalso B >= 0 andalso B =< 255 end, List)
+    orelse exit({ucs, {bad_utf8_character_code}}),
   case expand_utf8(List) of
     {Result,0} -> Result;
     {_Res,_NumBadChar} ->

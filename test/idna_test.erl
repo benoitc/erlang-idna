@@ -388,4 +388,9 @@ utf8_scalar_values_test() ->
   ?assertExit({ucs, _}, idna_ucs:to_utf8(16#D800)),
   ?assertExit({ucs, _}, idna_ucs:to_utf8(16#110000)),
   ?assertEqual([16#EF, 16#BF, 16#BE], idna_ucs:to_utf8(16#FFFE)),
-  ?assertExit({ucs, _}, idna:utf8_to_ascii([16#ED, 16#A0, 16#80])).
+  ?assertExit({ucs, _}, idna:utf8_to_ascii([16#ED, 16#A0, 16#80])),
+  %% A list given as UTF-8 must hold octets.
+  ?assertExit({ucs, _}, idna_ucs:from_utf8([-1])),
+  ?assertExit({ucs, _}, idna_ucs:from_utf8([65.5])),
+  ?assertExit({ucs, _}, idna:utf8_to_ascii([451, 425])),
+  ?assertEqual("xn--caf-dma.fr", idna:utf8_to_ascii([$c, $a, $f, 16#C3, 16#A9, $., $f, $r])).
