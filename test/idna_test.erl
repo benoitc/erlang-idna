@@ -375,7 +375,7 @@ context_rules_linear_test_() ->
   [{Name, {timeout, 10, fun() ->
      {Us, _} = timer:tc(fun() ->
        ?assertExit({bad_label, {too_long, _}}, idna:encode(Label)),
-       catch idna:decode(Label)
+       try idna:decode(Label) catch exit:_ -> ok end
      end),
      ?assert(Us < 500000)
    end}} || {Name, Label} <- Cases].

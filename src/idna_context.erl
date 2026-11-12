@@ -56,10 +56,7 @@ valid_contextj_at(_, _, _) ->
   false.
 
 virama_before([Prev | _]) ->
-  case unicode_util:lookup(Prev) of
-    #{ccc := ?virama_combining_class} -> true;
-    _ -> false
-  end;
+  idna_data:ccc(Prev) =:= ?virama_combining_class;
 virama_before([]) ->
   false.
 
