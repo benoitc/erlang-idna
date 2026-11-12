@@ -296,3 +296,86 @@ decode_test() ->
   ),
   ?assertExit({bad_label, {_, _}}, idna:decode("XN---------90GGLBAGAAC.AA")),
   ?assertExit({bad_label, {_, _}}, idna:decode("xn---------90gglbagaac.aa")).
+%% RFC 5892 Appendix A.1: ZWNJ is valid after a Virama, or between a left
+%% or dual joining character and a right or dual joining character, with
+%% only transparent characters in between.
+zwnj_test() ->
+  Beh = 16#0628, Alef = 16#0627, Zwnj = 16#200C,
+  ?assertEqual("xn--mgbb899q", idna:encode([Beh, Zwnj, Alef])),
+  ?assertEqual("xn--ngba799q", idna:encode([Beh, Zwnj, Beh])),
+  ?assertEqual([Beh, Zwnj, Alef], idna:decode("xn--mgbb899q")),
+  %% Transparent marks (implicit joining type T) on either side are skipped.
+  ?assertEqual([16#0644, 16#0670, Zwnj, 16#06ED, 16#06EF],
+               idna:decode(idna:encode([16#0644, 16#0670, Zwnj, 16#06ED, 16#06EF]))),
+  %% Alef only joins on the right, so it cannot come before the ZWNJ.
+  ?assertExit({bad_label, {contextj, _}}, idna:encode([Alef, Zwnj, Beh])),
+  ?assertExit({bad_label, {contextj, _}}, idna:encode([Beh, Zwnj])),
+  ?assertEqual([16#0915, 16#094D, Zwnj, 16#0915],
+               idna:decode(idna:encode([16#0915, 16#094D, Zwnj, 16#0915]))).
+
+empty_label_test() ->
+  ?assertExit({bad_label, {empty, _}}, idna:encode("a..b")),
+  ?assertExit({bad_label, {empty, _}}, idna:encode("a..b", [strict])),
+  ?assertExit({bad_label, {empty, _}}, idna:decode("a..b")),
+  ?assertExit({bad_label, {empty, _}}, idna:encode(".a")),
+  ?assertExit(empty_domain, idna:encode("")),
+  ?assertExit(empty_domain, idna:encode(".")),
+  %% The root label of an absolute name is kept.
+  ?assertEqual("example.com.", idna:encode("example.com.")),
+  ?assertEqual("example.com.", idna:decode("example.com.")).
+
+%% RFC 5891 Section 5.3-5.4: an A-label must decode to a non-ASCII label
+%% and be the canonical encoding of it.
+invalid_alabel_test() ->
+  ?assertExit({bad_label, {alabel, _}}, idna:decode("xn--")),
+  ?assertExit({bad_label, {alabel, _}}, idna:decode("xn--abc-")),
+  ?assertExit({bad_label, {alabel, _}}, idna:decode("xn--ASCII-.org")),
+  ?assertExit({bad_label, {alabel, _}}, idna:encode("xn--abc-.org")),
+  ?assertExit({bad_label, {punycode, _}}, idna:decode("xn--99999999999.ru")),
+  ?assertExit({bad_label, {punycode, _}}, idna:decode("xn--a_b")),
+  ?assertEqual("bücher", idna:decode("xn--BCHER-KVA")).
+
+domain_length_test() ->
+  D253 = string:join(lists:duplicate(4, lists:duplicate(62, $a)), ".") ++ ".a",
+  ?assertEqual(253, length(D253)),
+  ?assertEqual(D253, idna:encode(D253)),
+  ?assertEqual(D253 ++ ".", idna:encode(D253 ++ ".")),
+  ?assertExit({bad_domain, {too_long, _}}, idna:encode(D253 ++ "a")),
+  ?assertEqual(D253 ++ "a", idna:encode(D253 ++ "a", [{verify_dns_length, false}])),
+  ?assertEqual(D253 ++ "a", idna:decode(D253 ++ "a")).
+
+%% RFC 5893 Section 2: in a domain with a right-to-left label, every label
+%% must satisfy the Bidi rule, including left-to-right ones.
+bidi_domain_test() ->
+  Alef = 16#05D0,
+  ?assertEqual("a1.xn--4db", idna:encode([$a, $1, $., Alef])),
+  ?assertExit({bad_label, {bidi, _}}, idna:encode([$1, $a, $., Alef])),
+  ?assertEqual("1a.example", idna:encode("1a.example")).
+
+uts46_validity_test() ->
+  %% Valid in UTS #46 although IDNA2008 disallows it.
+  ?assertEqual("xn--7a", idna:encode([16#A1], [uts46])),
+  ?assertExit({bad_label, {context, _}}, idna:encode([16#A1])),
+  %% UseSTD3ASCIIRules only allows letters, digits and hyphen in ASCII.
+  ?assertEqual("_dmarc.example", idna:encode("_dmarc.example", [uts46])),
+  ?assertExit({bad_label, {std3_rules, _}}, idna:encode("_dmarc.example", [uts46, std3_rules])).
+
+options_test() ->
+  ?assertError(badarg, idna:encode("a", [bad, uts46])),
+  ?assertError(badarg, idna:encode("a", [{verify_dns_length, yes}])).
+
+%% Contextual rules walk the label once: rejecting or accepting a long
+%% label must stay linear in its length.
+context_rules_linear_test_() ->
+  N = 16000,
+  Cases = [{"ZWNJ after virama", lists:append(lists:duplicate(N, [16#0915, 16#094D, 16#200C])) ++ [16#0915]},
+           {"middle dot", lists:append(lists:duplicate(N, [$l, 16#B7])) ++ "l"},
+           {"katakana middle dot", lists:append(lists:duplicate(N, [16#30A1, 16#30FB])) ++ [16#30A1]},
+           {"arabic-indic digits", [16#0628 | lists:duplicate(N, 16#0661)]}],
+  [{Name, {timeout, 10, fun() ->
+     {Us, _} = timer:tc(fun() ->
+       ?assertExit({bad_label, {too_long, _}}, idna:encode(Label)),
+       catch idna:decode(Label)
+     end),
+     ?assert(Us < 500000)
+   end}} || {Name, Label} <- Cases].
