@@ -60,57 +60,40 @@ from_utf8(List) ->
   end.
 
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
-%%% UTF-8 support
-%%% Possible errors encoding UTF-8:
-%%%	- Non-character values (something other than 0 .. 2^31-1).
-%%%	- Surrogate pair code in string.
-%%%	- 16#FFFE or 16#FFFF character in string.
-%%% Possible errors decoding UTF-8:
-%%%	- 10xxxxxx or 1111111x as initial byte.
+%%% UTF-8 support (RFC 3629)
+%%% Errors encoding UTF-8:
+%%%	- A value that is not a Unicode scalar value (outside 0..16#10FFFF,
+%%%	  or a surrogate 16#D800..16#DFFF).
+%%% Errors decoding UTF-8:
+%%%	- 10xxxxxx or 11111xxx as initial byte.
 %%%	- Insufficient number of 10xxxxxx octets following an initial octet of
 %%%	multi-octet sequence.
-%%% 	- Non-canonical encoding used.
-%%%	- Surrogate-pair code encoded as UTF-8.
-%%%	- 16#FFFE or 16#FFFF character in string.
-char_to_utf8(Ch) when is_integer(Ch), Ch >= 0 ->
-  if Ch < 128 ->
-    %% 0yyyyyyy
-    [Ch];
-    Ch < 16#800 ->
-      %% 110xxxxy 10yyyyyy
-      [16#C0 + (Ch bsr 6),
-        128+(Ch band 16#3F)];
-    Ch < 16#10000 ->
-      %% 1110xxxx 10xyyyyy 10yyyyyy
-      if Ch < 16#D800; Ch > 16#DFFF, Ch < 16#FFFE ->
-        [16#E0 + (Ch bsr 12),
-          128+((Ch bsr 6) band 16#3F),
-          128+(Ch band 16#3F)]
-      end;
-    Ch < 16#200000 ->
-      %% 11110xxx 10xxyyyy 10yyyyyy 10yyyyyy
-      [16#F0+(Ch bsr 18),
-        128+((Ch bsr 12) band 16#3F),
-        128+((Ch bsr 6) band 16#3F),
-        128+(Ch band 16#3F)];
-    Ch < 16#4000000 ->
-      %% 111110xx 10xxxyyy 10yyyyyy 10yyyyyy 10yyyyyy
-      [16#F8+(Ch bsr 24),
-        128+((Ch bsr 18) band 16#3F),
-        128+((Ch bsr 12) band 16#3F),
-        128+((Ch bsr 6) band 16#3F),
-        128+(Ch band 16#3F)];
-    Ch < 16#80000000 ->
-      %% 1111110x 10xxxxyy 10yyyyyy 10yyyyyy 10yyyyyy 10yyyyyy
-      [16#FC+(Ch bsr 30),
-        128+((Ch bsr 24) band 16#3F),
-        128+((Ch bsr 18) band 16#3F),
-        128+((Ch bsr 12) band 16#3F),
-        128+((Ch bsr 6) band 16#3F),
-        128+(Ch band 16#3F)]
-  end.
-
-
+%%% 	- Non-canonical (overlong) encoding used.
+%%%	- Surrogate code point encoded as UTF-8.
+%%%	- Code point above 16#10FFFF.
+%% RFC 3629: UTF-8 encodes Unicode scalar values, U+0000..U+10FFFF
+%% without the surrogates U+D800..U+DFFF, in at most four octets.
+char_to_utf8(Ch) when is_integer(Ch), Ch >= 0, Ch < 16#80 ->
+  %% 0yyyyyyy
+  [Ch];
+char_to_utf8(Ch) when is_integer(Ch), Ch >= 16#80, Ch < 16#800 ->
+  %% 110xxxxy 10yyyyyy
+  [16#C0 + (Ch bsr 6),
+   128 + (Ch band 16#3F)];
+char_to_utf8(Ch) when is_integer(Ch), Ch >= 16#800, Ch < 16#10000,
+                      (Ch < 16#D800 orelse Ch > 16#DFFF) ->
+  %% 1110xxxx 10xyyyyy 10yyyyyy
+  [16#E0 + (Ch bsr 12),
+   128 + ((Ch bsr 6) band 16#3F),
+   128 + (Ch band 16#3F)];
+char_to_utf8(Ch) when is_integer(Ch), Ch >= 16#10000, Ch =< 16#10FFFF ->
+  %% 11110xxx 10xxyyyy 10yyyyyy 10yyyyyy
+  [16#F0 + (Ch bsr 18),
+   128 + ((Ch bsr 12) band 16#3F),
+   128 + ((Ch bsr 6) band 16#3F),
+   128 + (Ch band 16#3F)];
+char_to_utf8(Ch) ->
+  exit({ucs, {bad_character_code, Ch}}).
 
 
 %% expand_utf8([Byte]) -> {[UnicodeChar],NumberOfBadBytes}
@@ -141,7 +124,7 @@ expand_utf8_1([C1,C2,C3|Cs], Acc, Bad) when C1 band 16#F0 =:= 16#E0,
   C3 band 16#C0 =:= 16#80 ->
   case ((((C1 band 16#0F) bsl 6) bor (C2 band 16#3F)) bsl 6) bor
     (C3 band 16#3F) of
-    C when 16#800 =< C ->
+    C when 16#800 =< C, (C < 16#D800 orelse C > 16#DFFF) ->
       expand_utf8_1(Cs, [C|Acc], Bad);
     _ ->
       %% Bad range.
@@ -151,9 +134,9 @@ expand_utf8_1([C1,C2,C3,C4|Cs], Acc, Bad) when C1 band 16#F8 =:= 16#F0,
   C2 band 16#C0 =:= 16#80,
   C3 band 16#C0 =:= 16#80,
   C4 band 16#C0 =:= 16#80 ->
-  case ((((((C1 band 16#0F) bsl 6) bor (C2 band 16#3F)) bsl 6) bor
+  case ((((((C1 band 16#07) bsl 6) bor (C2 band 16#3F)) bsl 6) bor
     (C3 band 16#3F)) bsl 6) bor (C4 band 16#3F) of
-    C when 16#10000 =< C ->
+    C when 16#10000 =< C, C =< 16#10FFFF ->
       expand_utf8_1(Cs, [C|Acc], Bad);
     _ ->
       %% Bad range.

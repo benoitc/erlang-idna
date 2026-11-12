@@ -8,7 +8,8 @@
 %%%
 %%% == Features ==
 %%% <ul>
-%%%   <li>Support for IDNA 2008 and IDNA 2003</li>
+%%%   <li>Support for IDNA 2008, and IDNA 2003 compatibility through UTS #46
+%%%       transitional processing</li>
 %%%   <li>UTS #46 compatibility processing</li>
 %%%   <li>Label validation (NFC, hyphens, combining marks, context rules, BIDI)</li>
 %%% </ul>
