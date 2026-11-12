@@ -4,6 +4,11 @@
 %%% See the LICENSE for more information.
 %%%
 %% @doc Punycode ([RFC 3492](http://tools.ietf.org/html/rfc3492)) implementation.
+%%
+%% This is the low-level transform and it has no length limit, as RFC 3492
+%% defines none. Its cost grows faster than linearly with the input, so
+%% bound the input before calling it on untrusted data. `idna' rejects
+%% labels longer than 63 characters before calling this module.
 
 -module(punycode).
 

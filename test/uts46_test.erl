@@ -3,204 +3,111 @@
 %%% This file is part of erlang-idna released under the MIT license.
 %%% See the LICENSE for more information.
 %%%
+%% UTS #46 conformance test against IdnaTestV2.txt.
+%%
+%% Every row is run through toUnicode (idna:decode/2), toAsciiN and toAsciiT
+%% (idna:encode/2). A row with no status codes must give exactly the
+%% expected string; a row with status codes must raise. The file is written
+%% for CheckHyphens, CheckBidi, CheckJoiners, UseSTD3ASCIIRules and
+%% VerifyDnsLength all set, which are the options used here.
+%%
+%% Two documented differences from the file are accepted:
+%%
+%% - Root label. idna keeps a trailing root label ("example.com.", an
+%%   absolute name in RFC 1035) where UTS #46 VerifyDnsLength reports A4_2.
+%%   A row whose only error is A4_2 is accepted when the result ends with
+%%   the root dot.
+%% - Long A-labels in toUnicode. idna always rejects labels over 63
+%%   characters before Punycode decoding, to bound the decoding cost, where
+%%   UTS #46 toUnicode does not check length. Accepted when toUnicode raises
+%%   too_long and the row's toAsciiN status has A4_2.
 -module(uts46_test).
 -author("benoitc").
 
--ifdef('OTP_RELEASE').
--define(chomp(Str), string:chomp(Str)).
--define(trim(Str, Dir), string:trim(Str, Dir)).
--define(trim(Str), string:trim(Str, both)).
--define(lexemes(Str, Pat), string:lexemes(Str, Pat)).
--else.
--define(chomp(Str), string:strip(Str, right, $\n)).
--define(trim(Str, Dir), string:strip(Str, Dir)).
--define(trim(Str), string:strip(Str, both)).
--define(lexemes(Str, Pat), string:strip(string:tokens(Str, Pat), both)).
--endif.
-
 -include_lib("eunit/include/eunit.hrl").
 
--define(SKIP_TESTS, [
-  [], "xn--r97c.", "𐋷.", "xn--pw9c.xn--fjb8658k", "0.xn--qny", "0.甯",
+uts46_conformance_test_() ->
+  {timeout, 120, fun conformance/0}.
 
-  "xn--hwe.xn--ss-ci1ub261a",
-  "ss.xn--lgd921mvv0m",
-  "xn--4xa.xn--1-gocmu97674d.",
-  "xn--ghb2gxqia",
-  "xn--4xa203s.xn--epb",
-  "xn--ghb2g3qq34f",
-  [49,121369,11798,46],
+conformance() ->
+  Rows = load_rows(),
+  ?assert(length(Rows) > 6000),
+  Failures = lists:flatmap(fun check_row/1, Rows),
+  case Failures of
+    [] -> ok;
+    _ ->
+      [?debugFmt("~p", [F]) || F <- lists:sublist(Failures, 20)],
+      ?assertEqual({0, []}, {length(Failures), lists:sublist(Failures, 5)})
+  end.
 
+check_row(#{line := Line, source := Src} = Row) ->
+  Ops = [{to_unicode, fun() -> idna:decode(Src, [uts46, std3_rules]) end,
+          maps:get(to_unicode, Row), maps:get(to_unicode_status, Row)},
+         {to_ascii_n, fun() -> idna:encode(Src, [uts46, std3_rules, {transitional, false}]) end,
+          maps:get(to_ascii_n, Row), maps:get(to_ascii_n_status, Row)},
+         {to_ascii_t, fun() -> idna:encode(Src, [uts46, std3_rules, {transitional, true}]) end,
+          maps:get(to_ascii_t, Row), maps:get(to_ascii_t_status, Row)}],
+  [{Op, Line, Expected, Status, Result}
+   || {Op, Fun, Expected, Status} <- Ops,
+      Result <- [run(Fun)],
+      not conforms(Op, Expected, Status, Result, Row)].
 
+run(Fun) ->
+  try {ok, Fun()}
+  catch Class:Reason -> {Class, Reason}
+  end.
 
-  [56,52,119355,46,66293,9959],
-  [57,38529,11246,46]
+conforms(_Op, Expected, [], {ok, Expected}, _Row) -> true;
+conforms(to_unicode, _Expected, [], {exit, {bad_label, {too_long, _}}}, Row) ->
+  lists:member("A4_2", maps:get(to_ascii_n_status, Row));
+conforms(_Op, _Expected, [], _Result, _Row) -> false;
+conforms(_Op, _Expected, Status, {ok, Out}, _Row) ->
+  Status -- ["A4_2"] =:= [] andalso Out =/= [] andalso lists:last(Out) =:= $.;
+conforms(_Op, _Expected, _Status, {exit, _}, _Row) -> true;
+conforms(_Op, _Expected, _Status, _Result, _Row) -> false.
 
-
-]).
-
-%% Characters formed by combining with U+0338 that the library's IDNA2008
-%% context checker rejects even in UTS #46 mode (known limitation).
-%% These are valid in UTS #46 but the library's check_context uses IDNA2008 rules.
--define(SKIP_COMBINING_CHARS, [
-  16#226E,  % ≮ NOT LESS-THAN (< + U+0338)
-  16#226F,  % ≯ NOT GREATER-THAN (> + U+0338)
-  16#2260,  % ≠ NOT EQUAL TO (= + U+0338)
-  16#219A,  % ↚ LEFTWARDS ARROW WITH STROKE
-  16#219B,  % ↛ RIGHTWARDS ARROW WITH STROKE
-  16#21AE,  % ↮ LEFT RIGHT ARROW WITH STROKE
-  16#21CD,  % ⇍ LEFTWARDS DOUBLE ARROW WITH STROKE
-  16#21CE,  % ⇎ LEFT RIGHT DOUBLE ARROW WITH STROKE
-  16#21CF   % ⇏ RIGHTWARDS DOUBLE ARROW WITH STROKE
-]).
-
-has_skip_combining_char(S) when is_list(S) ->
-  lists:any(fun(C) -> lists:member(C, ?SKIP_COMBINING_CHARS) end, S);
-has_skip_combining_char(_) -> false.
-
-uts46_conformance_test() ->
-  Data = load_file(),
-
-  lists:foreach(
-    fun({Source, ToUnicode, ToUnicodeStatus, ToAsciiN, ToAsciiNStatus, ToAsciiT, ToAsciiTStatus}=_Row) ->
-        Ignored = (lists:member(Source, ?SKIP_TESTS)
-                   orelse lists:member(ToAsciiN, ?SKIP_TESTS)
-                   orelse lists:member(ToAsciiT, ?SKIP_TESTS)
-                   orelse has_skip_combining_char(Source)
-                   orelse has_skip_combining_char(ToUnicode)),
-
-      case Ignored of
-        true -> ok;
-        false ->
-          CheckUnicode = ToUnicodeStatus == [] andalso ToUnicode /= "",
-          case CheckUnicode of
-            true ->
-              %%?debugFmt("test rown=~p~n", [_Row]),
-               %io:format("decode ~p~n", [Source]),
-              ?assertEqual(ToUnicode, idna:decode(Source, [uts46, {std3_rules, true}]));
-            _ ->
-              ok
-          end,
-
-          CheckAsciiN = ToUnicode /= [] andalso ToAsciiN /= "" andalso ToAsciiNStatus ==[],
-
-          case CheckAsciiN of
-            true ->
-              %?debugFmt("test rown=~p~n", [_Row]),
-              ?assertEqual(ToAsciiN, idna:encode(Source, [uts46, {transitional, false}]));
-            false ->
-              ok
-          end,
-
-          CheckToAsciiT = ToAsciiT /= "" andalso ToAsciiTStatus == [],
-          case CheckToAsciiT of
-            true ->
-              %?debugFmt("test row=~p~n", [_Row]),
-              ?assertEqual(ToAsciiT, idna:encode(Source, [uts46, {transitional, true}]));
-            false ->
-              ok
-          end
-      end
-    end,
-    Data
-  ).
-
-load_file() ->
+%% Parse IdnaTestV2.txt following the FORMAT section of its header.
+load_rows() ->
   EbinDir = filename:dirname(code:which(?MODULE)),
-  AppPath = filename:dirname(EbinDir),
-  Name = filename:join([AppPath, "test", "IdnaTestV2.txt"]),
-  {ok, Tests} = file:open(Name, [read, {encoding, utf8}, {read_ahead, 1000000}]),
-  %%{ok, Tests} = file:open(Name, [read, raw, unicode, {read_ahead, 1000000}]),
-  Data = foldl(fun parse_tests/2, [], Tests),
-  file:close(Tests),
-  lists:sort(Data).
+  Name = filename:join([filename:dirname(EbinDir), "test", "IdnaTestV2.txt"]),
+  {ok, Bin} = file:read_file(Name),
+  Lines = string:split(unicode:characters_to_list(Bin), "\n", all),
+  [parse_row(L) || L <- Lines, L =/= "", hd(L) =/= $#].
 
+parse_row(Line) ->
+  [Data | _Comment] = string:split(Line, "#"),
+  Cols0 = [string:trim(C) || C <- string:split(Data, ";", all)],
+  [C1, C2, C3, C4, C5, C6, C7] = Cols0 ++ lists:duplicate(7 - length(Cols0), ""),
+  Source = value(C1, ""),
+  %% A blank value means the same as the column it derives from.
+  ToUnicode = value(C2, Source),
+  ToAsciiN = value(C4, ToUnicode),
+  ToAsciiT = value(C6, ToAsciiN),
+  %% A blank status inherits; an explicit [] means no errors.
+  S3 = status(C3, []),
+  S5 = status(C5, S3),
+  S7 = status(C7, S5),
+  #{line => string:trim(Line), source => Source,
+    to_unicode => ToUnicode, to_unicode_status => S3,
+    to_ascii_n => ToAsciiN, to_ascii_n_status => S5,
+    to_ascii_t => ToAsciiT, to_ascii_t_status => S7}.
 
-parse_tests(Line0, Acc) ->
-  Line1 = ?chomp(Line0),
-  [Line|_Comments] = tokens(Line1, "#"),
-  [Source, ToUnicode, ToUnicodeStatusStr,
-    ToAsciiN, ToAsciiNStatusStr, ToAsciiT, ToAsciiTStatusStr] =  case tokens(Line, ";") of
-                                                                   Row when length(Row) > 6 -> Row;
-                                                                   Row -> Row ++ [""]
-                                                                 end,
-  ToUnicodeStatus = parse_status(?trim(ToUnicodeStatusStr)),
-  ToAsciiNStatus = case parse_status(?trim(ToAsciiNStatusStr)) of
-                     [] -> ToUnicodeStatus;
-                     ToAsciiNStatus1 -> ToAsciiNStatus1
-                   end,
-  ToAsciiTStatus = case parse_status(?trim(ToAsciiTStatusStr)) of
-                     [] -> ToUnicodeStatus;
-                     ToAsciiTStatus1 -> ToAsciiTStatus1
-                   end,
+value("", Inherit) -> Inherit;
+value("\"\"", _) -> "";
+value(S, _) -> unescape(S).
 
-  [{parse_unicode(Source),
-    parse_unicode(ToUnicode),  ToUnicodeStatus,
-    parse_unicode(ToAsciiN), ToAsciiNStatus,
-    parse_unicode(ToAsciiT), ToAsciiTStatus} | Acc].
+status("", Inherit) -> Inherit;
+status("[]", _) -> [];
+status("[" ++ Rest, _) ->
+  [string:trim(C) || C <- string:split(string:trim(Rest, trailing, "]"), ",", all)].
 
-
-parse_unicode(S) ->
-  decode_escapes(?trim(S, both)).
-
-%% Decode \uXXXX and \x{XXXX} escape sequences
-decode_escapes([]) -> [];
-decode_escapes([$\\, $u, A, B, C, D | Rest]) ->
-  Codepoint = list_to_integer([A, B, C, D], 16),
-  [Codepoint | decode_escapes(Rest)];
-decode_escapes([$\\, $x, ${ | Rest]) ->
-  {HexStr, [$} | Rest2]} = lists:splitwith(fun(C) -> C =/= $} end, Rest),
-  Codepoint = list_to_integer(HexStr, 16),
-  [Codepoint | decode_escapes(Rest2)];
-decode_escapes([C | Rest]) ->
-  [C | decode_escapes(Rest)].
-
-to_unicode(S) ->
-  case lists:all(fun(C) -> idna_ucs:is_unicode(C) end, S) of
-    true -> S;
-    false -> idna_ucs:from_utf8(S)
-
-  end.
-
-parse_status(" ") -> [];
-parse_status("") -> [];
-parse_status("[]") -> [];
-parse_status("[" ++ Str) ->
-  [ErrorsStr] =  ?lexemes(Str, "]"),
-  ?lexemes(ErrorsStr, ",").
-
-
-foldl(Fun, Acc, Fd) ->
-  Get = fun() -> io:get_line(Fd, "") end,
-%  Get = fun() -> file:read_line(Fd) end,
-  foldl_1(Fun, Acc, Get).
-
-foldl_1(_Fun, {done, Acc}, _Get) -> Acc;
-foldl_1(Fun, Acc, Get) ->
-  case Get() of
-    eof -> Acc;
-    "#" ++ _ -> %% Ignore comments
-      foldl_1(Fun, Acc, Get);
-    "\n" -> %% Ignore empty lines
-      foldl_1(Fun, Acc, Get);
-    Line ->
-      foldl_1(Fun, Fun(Line, Acc), Get)
-  end.
-
-%% Differs from string:tokens, it returns empty string as token between two delimiters
-tokens(S, [C]) ->
-  tokens(lists:reverse(S), C, []).
-
-tokens([Sep|S], Sep, Toks) ->
-  tokens(S, Sep, [[]|Toks]);
-tokens([C|S], Sep, Toks) ->
-  tokens_2(S, Sep, Toks, [C]);
-tokens([], _, Toks) ->
-  Toks.
-
-tokens_2([Sep|S], Sep, Toks, Tok) ->
-  tokens(S, Sep, [Tok|Toks]);
-tokens_2([C|S], Sep, Toks, Tok) ->
-  tokens_2(S, Sep, Toks, [C|Tok]);
-tokens_2([], _Sep, Toks, Tok) ->
-  [Tok|Toks].
+%% Decode the \uXXXX and \x{XXXX} escapes used in the file.
+unescape([$\\, $u, A, B, C, D | Rest]) ->
+  [list_to_integer([A, B, C, D], 16) | unescape(Rest)];
+unescape([$\\, $x, ${ | Rest]) ->
+  {Hex, [$} | Rest2]} = lists:splitwith(fun(C) -> C =/= $} end, Rest),
+  [list_to_integer(Hex, 16) | unescape(Rest2)];
+unescape([C | Rest]) ->
+  [C | unescape(Rest)];
+unescape([]) ->
+  [].

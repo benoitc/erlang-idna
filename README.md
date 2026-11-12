@@ -77,10 +77,13 @@ The `encode/2` and `decode/2` functions accept an options list:
 
 | Option | Default | Description |
 |--------|---------|-------------|
-| `uts46` | `false` | Enable [UTS #46](https://unicode.org/reports/tr46/) compatibility processing |
-| `std3_rules` | `false` | Enforce STD3 ASCII rules |
-| `transitional` | `false` | Use transitional processing (IDNA 2003 compatibility) |
+| `uts46` | `false` | Map and validate with [UTS #46](https://unicode.org/reports/tr46/) instead of the stricter IDNA2008 tables |
+| `std3_rules` | `false` | With `uts46`, only allow `a-z`, `0-9` and `-` in ASCII |
+| `transitional` | `false` | Use transitional processing (IDNA 2003 compatibility, deprecated by UTS #46) |
 | `strict` | `false` | Only use ASCII period (`.`) as label separator |
+| `verify_dns_length` | `true` | Reject encoded domains longer than 253 characters (RFC 1035) |
+
+Encoding always limits labels to 63 characters, and decoding limits `xn--` labels to 63 characters before Punycode decoding. Empty labels are rejected, except the root label at the end of an absolute name such as `"example.com."`.
 
 ### Examples with Options
 
@@ -97,9 +100,14 @@ The `encode/2` and `decode/2` functions accept an options list:
 3> idna:encode("faß.de", [uts46]).
 "xn--fa-hia.de"
 
-%% STD3 rules reject certain characters
-4> idna:encode("_example.com", [uts46, std3_rules]).
-** exception exit: {invalid_codepoint,95}
+%% Underscores are allowed in UTS #46 mode unless std3_rules is set
+4> idna:encode("_dmarc.example.com", [uts46]).
+"_dmarc.example.com"
+5> idna:encode("_dmarc.example.com", [uts46, std3_rules]).
+** exception exit: {bad_label,{std3_rules,"Codepoint 95 is not allowed by STD3 rules"}}
+
+%% Allow domains longer than the DNS limit
+6> idna:encode(LongName, [{verify_dns_length, false}]).
 ```
 
 ## API Reference

@@ -4,7 +4,14 @@
 
 - fix slow rejection of over-long labels: a label longer than 63 characters was fully Punycode-converted before being rejected, so a single long hostname label could keep the CPU busy for seconds or minutes. It is now rejected right away.
 - Punycode encoding and decoding are much faster on long inputs.
-- decoding now rejects plain ASCII labels longer than 63 characters, matching what encoding already did.
+- fix names with a zero width non-joiner (common in Persian and other Arabic-script languages): valid names were always rejected.
+- fix slow validation of long labels with many joiners, middle dots or digits. The cost of checking a label now grows linearly with its length.
+- empty labels such as in "a..b" are now rejected. Before, they were accepted, and the strict option silently dropped them. A trailing dot (the root label) is still accepted.
+- invalid A-labels are now rejected: labels like "xn--abc-" that decode to plain ASCII, labels that are not the canonical encoding of what they decode to, and "xn--", which used to crash.
+- new verify_dns_length option, on by default: encoding rejects domains longer than 253 characters, the DNS limit. Pass {verify_dns_length, false} to allow longer names.
+- the Bidi rule now applies to every label of a domain that contains a right-to-left label, as RFC 5893 requires. Some mixed-direction domains that were accepted are now rejected.
+- the uts46 option now validates with the UTS #46 rules instead of the stricter IDNA2008 tables. Characters such as ¡ or ≠ are accepted in this mode. std3_rules works again: without it, names such as "_dmarc.example" are accepted, and with it they are rejected.
+- the full UTS #46 conformance test file now runs in both directions, checking that valid names are accepted and invalid ones rejected.
 
 == 7.1.0 - 2026-01-21
 
