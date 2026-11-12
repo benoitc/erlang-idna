@@ -1,5 +1,11 @@
 # CHANGELOG
 
+== unreleased
+
+- fix slow rejection of over-long labels: a label longer than 63 characters was fully Punycode-converted before being rejected, so a single long hostname label could keep the CPU busy for seconds or minutes. It is now rejected right away.
+- Punycode encoding and decoding are much faster on long inputs.
+- decoding now rejects plain ASCII labels longer than 63 characters, matching what encoding already did.
+
 == 7.1.0 - 2026-01-21
 
 - update to Unicode 17.0.0

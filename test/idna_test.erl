@@ -83,6 +83,30 @@ check_label_length_test() ->
   ?assertExit({bad_label, {too_long, _Error}}, idna:check_label_length([$a || _ <- lists:seq(1, 64)])),
   ?assertExit({bad_label, {too_long, _Error}}, idna:encode([$a || _ <- lists:seq(1, 64)])).
 
+%% The label length must be checked before the Punycode transform: the
+%% transform is superlinear in the label length, so decoding or encoding an
+%% over-long label first would let invalid input burn CPU. A 4000 code point
+%% label took about a minute to decode before the check was moved.
+label_length_checked_before_punycode_test_() ->
+  Long = [16#4e00 + (I rem 2000) || I <- lists:seq(1, 4000)],
+  LongALabel = "xn--" ++ punycode:encode(Long),
+  [{"over-long A-label is rejected before decoding",
+    {timeout, 5, fun() ->
+      {Us, _} = timer:tc(fun() ->
+        ?assertExit({bad_label, {too_long, _}}, idna:ulabel(LongALabel)),
+        ?assertExit({bad_label, {too_long, _}}, idna:decode(LongALabel ++ ".example"))
+      end),
+      ?assert(Us < 1000000)
+    end}},
+   {"over-long U-label is rejected before encoding",
+    {timeout, 5, fun() ->
+      {Us, _} = timer:tc(fun() ->
+        ?assertExit({bad_label, {too_long, _}}, idna:alabel(Long)),
+        ?assertExit({bad_label, {too_long, _}}, idna:encode(Long ++ ".example"))
+      end),
+      ?assert(Us < 1000000)
+    end}}].
+
 check_bidi_test() ->
   L = [16#0061],
   R = [16#05d0],

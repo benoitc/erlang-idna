@@ -155,3 +155,17 @@ punicode_decode_test() ->
     end,
     data()
   ).
+
+%% Round trip of a long label: decode used to rebuild the output prefix with
+%% ++ on every insertion (cubic in the label length) and encode appended to
+%% the output with ++ (quadratic). Both are now bounded well under a second
+%% for a 2000 code point label; the old decode took about five seconds.
+punycode_long_label_round_trip_test_() ->
+  Input = [16#4e00 + (I rem 2000) || I <- lists:seq(1, 2000)],
+  {timeout, 10, fun() ->
+    {Us, Encoded} = timer:tc(fun() -> punycode:encode(Input) end),
+    ?assert(Us < 1000000),
+    {Us2, Decoded} = timer:tc(fun() -> punycode:decode(Encoded) end),
+    ?assert(Us2 < 1000000),
+    ?assertEqual(Input, Decoded)
+  end}.
