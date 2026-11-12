@@ -28,7 +28,7 @@ Add to your `rebar.config`:
 
 ```erlang
 {deps, [
-    {idna, "7.1.0"}
+    {idna, "8.0.0"}
 ]}.
 ```
 
@@ -39,7 +39,7 @@ Add to your `mix.exs`:
 ```elixir
 defp deps do
   [
-    {:idna, "~> 7.1"}
+    {:idna, "~> 8.0"}
   ]
 end
 ```
