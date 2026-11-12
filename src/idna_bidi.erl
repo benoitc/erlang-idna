@@ -8,7 +8,12 @@
 -author("benoitc").
 
 %% API
--export([check_bidi/1, check_bidi/2]).
+-export([check_bidi/1, check_bidi/2, has_rtl/1]).
+
+%% @doc True if the label has a character with bidi class R, AL or AN,
+%% which makes the domain containing it a Bidi domain name (RFC 5893 Section 1.4).
+has_rtl(Label) ->
+  check_rtl(Label, Label).
 
 check_bidi(Label) -> check_bidi(Label, false).
 

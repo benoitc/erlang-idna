@@ -75,14 +75,17 @@
                    | transitional
                    | {transitional, boolean()}
                    | strict
-                   | {strict, boolean()}.
+                   | {strict, boolean()}
+                   | verify_dns_length
+                   | {verify_dns_length, boolean()}.
 %% IDNA processing options.
 %%
 %% <ul>
 %%   <li>`uts46' - Enable UTS #46 compatibility processing (default: false)</li>
-%%   <li>`std3_rules' - Enforce STD3 ASCII rules (default: false)</li>
+%%   <li>`std3_rules' - With `uts46', only allow a-z, 0-9 and hyphen in ASCII (default: false)</li>
 %%   <li>`transitional' - Use transitional processing for IDNA 2003 compatibility (default: false)</li>
 %%   <li>`strict' - Use strict dot separator (only ASCII period) (default: false)</li>
+%%   <li>`verify_dns_length' - Reject encoded domains longer than 253 characters (default: true)</li>
 %% </ul>
 
 -type idna_flags() :: [idna_flag()].
@@ -146,26 +149,13 @@ encode(Domain) ->
       Options :: idna_flags(),
       AsciiDomain :: domain().
 encode(Domain0, Options) ->
-  ok = validate_options(Options),
-  Domain = case proplists:get_value(uts46, Options, false) of
-             true ->
-               STD3Rules = proplists:get_value(std3_rules, Options, false),
-               Transitional = proplists:get_value(transitional, Options, false),
-               uts46_remap(Domain0, STD3Rules, Transitional);
-             false ->
-               Domain0
-           end,
-  Labels = case proplists:get_value(strict, Options, false) of
-             false ->
-               re:split(Domain, "[.。．｡]", [{return, list}, unicode]);
-             true ->
-               string:tokens(Domain, ".")
-           end,
-  case Labels of
-    [] -> exit(empty_domain);
-    _ ->
-      encode_1(Labels, [])
-  end.
+  Opts = options(Options),
+  {Labels, Root} = split_domain(remap(Domain0, Opts), Opts),
+  Pairs = [encode_label(Label, Opts) || Label <- Labels],
+  ok = check_bidi_domain([ULabel || {_, ULabel} <- Pairs]),
+  Ascii = lists:join($., [ALabel || {ALabel, _} <- Pairs]),
+  ok = check_domain_length(lists:flatten(Ascii), Opts),
+  lists:flatten(Ascii) ++ Root.
 
 %%--------------------------------------------------------------------
 %% @doc Decode an ASCII domain name to Unicode using the IDNA protocol.
@@ -203,27 +193,11 @@ decode(Domain) ->
       Options :: idna_flags(),
       Domain :: domain().
 decode(Domain0, Options) ->
-  ok = validate_options(Options),
-  Domain = case proplists:get_value(uts46, Options, false) of
-             true ->
-               STD3Rules = proplists:get_value(std3_rules, Options, false),
-               Transitional = proplists:get_value(transitional, Options, false),
-               uts46_remap(Domain0, STD3Rules, Transitional);
-             false ->
-               Domain0
-           end,
-
-  Labels = case proplists:get_value(strict, Options, false) of
-             false ->
-               re:split(lowercase(Domain), "[.。．｡]", [{return, list}, unicode]);
-             true ->
-               string:tokens(lowercase(Domain), ".")
-           end,
-  case Labels of
-    [] -> exit(empty_domain);
-    _ ->
-      decode_1(Labels, [])
-  end.
+  Opts = options(Options),
+  {Labels, Root} = split_domain(lowercase(remap(Domain0, Opts)), Opts),
+  ULabels = [decode_label(Label, Opts) || Label <- Labels],
+  ok = check_bidi_domain(ULabels),
+  lists:flatten(lists:join($., ULabels)) ++ Root.
 
 
 %%--------------------------------------------------------------------
@@ -303,15 +277,210 @@ validate_options([std3_rules|Rs]) -> validate_options(Rs);
 validate_options([{std3_rules, B}|Rs]) when is_boolean(B) -> validate_options(Rs);
 validate_options([transitional|Rs]) -> validate_options(Rs);
 validate_options([{transitional, B}|Rs]) when is_boolean(B) -> validate_options(Rs);
-validate_options([_]) -> erlang:error(badarg).
+validate_options([verify_dns_length|Rs]) -> validate_options(Rs);
+validate_options([{verify_dns_length, B}|Rs]) when is_boolean(B) -> validate_options(Rs);
+validate_options(_) -> erlang:error(badarg).
 
 %% @private
-encode_1([], Acc) ->
-  lists:reverse(Acc);
-encode_1([Label|Labels], []) ->
-  encode_1(Labels, lists:reverse(alabel(Label)));
-encode_1([Label|Labels], Acc) ->
-  encode_1(Labels, lists:reverse(alabel(Label), [$.|Acc])).
+options(Options) ->
+  ok = validate_options(Options),
+  #{uts46 => proplists:get_value(uts46, Options, false),
+    std3_rules => proplists:get_value(std3_rules, Options, false),
+    transitional => proplists:get_value(transitional, Options, false),
+    strict => proplists:get_value(strict, Options, false),
+    verify_dns_length => proplists:get_value(verify_dns_length, Options, true)}.
+
+%% Default options of the label API (alabel/1, ulabel/1): IDNA2008.
+default_options() ->
+  options([]).
+
+%% @private
+remap(Domain, #{uts46 := true, std3_rules := STD3Rules, transitional := Transitional}) ->
+  uts46_remap(Domain, STD3Rules, Transitional);
+remap(Domain, _Opts) ->
+  Domain.
+
+%% Split a domain into its labels and the root label separator ("." when
+%% the domain ends with the root label, as in "example.com.", "" otherwise).
+%% Empty labels are rejected: a domain name is a sequence of non-empty
+%% labels (RFC 5890 Section 2.3.2.1, UTS #46 X4_2), and only the root label
+%% at the end may be empty (RFC 1035 Section 3.1).
+split_domain(Domain, #{strict := Strict}) ->
+  Parts = case Strict of
+            false -> re:split(Domain, "[.。．｡]", [{return, list}, unicode]);
+            true -> string:split(Domain, ".", all)
+          end,
+  {Labels, Root} = case lists:reverse(Parts) of
+                     [[] | Rest] -> {lists:reverse(Rest), "."};
+                     _ -> {Parts, ""}
+                   end,
+  case Labels of
+    [] -> exit(empty_domain);
+    [[]] -> exit(empty_domain);
+    _ -> ok
+  end,
+  case lists:member([], Labels) of
+    true ->
+      ErrorMsg = error_msg("The domain ~p contains an empty label", [Domain]),
+      erlang:exit({bad_label, {empty, ErrorMsg}});
+    false ->
+      {Labels, Root}
+  end.
+
+%% RFC 1035 Section 2.3.4: a domain name is at most 255 octets on the wire,
+%% which is 253 characters in text form without the root label. This is
+%% the VerifyDnsLength check of UTS #46 Section 4.2 (A4_1).
+check_domain_length(Ascii, #{verify_dns_length := true}) when length(Ascii) > 253 ->
+  ErrorMsg = error_msg("The domain ~p is longer than 253 characters", [Ascii]),
+  erlang:exit({bad_domain, {too_long, ErrorMsg}});
+check_domain_length(_Ascii, _Opts) ->
+  ok.
+
+%% Return {ALabel, ULabel} for a label given to encode.
+encode_label(Label, Opts) ->
+  %% A label is a DNS label, at most 63 octets. Every code point of a
+  %% U-label produces at least one octet of its A-label, so a longer label
+  %% can never be valid. Check it before any validation or Punycode work so
+  %% the cost of rejecting a long label stays linear.
+  ok = check_label_length(Label),
+  case is_ascii(Label) of
+    true ->
+      {Label, to_ulabel(lowercase(Label), Opts)};
+    false ->
+      ok = validate_label(Label, Opts),
+      ALabel = ?ACE_PREFIX ++ punycode:encode(Label),
+      ok = check_label_length(ALabel),
+      {ALabel, Label}
+  end.
+
+%% Return the U-label for a label given to decode (already lowercased).
+decode_label(Label, Opts) ->
+  case is_ascii(Label) of
+    true -> to_ulabel(Label, Opts);
+    false ->
+      ok = validate_label(Label, Opts),
+      Label
+  end.
+
+%% Convert a lowercase ASCII label to its U-label and validate it.
+to_ulabel(?ACE_PREFIX ++ Puny = ALabel, Opts) ->
+  %% Bound the Punycode input: decoding is superlinear in its length.
+  ok = check_label_length(ALabel),
+  ULabel = decode_alabel(Puny, ALabel),
+  %% UTS #46 Section 4 step 4: a decoded label is validated with
+  %% Nontransitional Processing.
+  ok = validate_label(ULabel, Opts#{transitional := false}),
+  ULabel;
+to_ulabel(Label, Opts) ->
+  ok = validate_label(Label, Opts),
+  Label.
+
+%% RFC 5891 Section 5.3-5.4 and UTS #46 Section 4 step 4: the Punycode part
+%% must decode, must not decode to an empty or all-ASCII string, and must be
+%% the canonical encoding of what it decodes to.
+decode_alabel(Puny, ALabel) ->
+  ULabel = try punycode:decode(Puny)
+           catch
+             _:Reason ->
+               ErrorMsg = error_msg("The label ~p is not valid Punycode: ~p", [ALabel, Reason]),
+               erlang:exit({bad_label, {punycode, ErrorMsg}})
+           end,
+  case ULabel =/= [] andalso not is_ascii(ULabel) of
+    true -> ok;
+    false ->
+      ErrorMsg1 = error_msg("The label ~p does not decode to a non-ASCII label", [ALabel]),
+      erlang:exit({bad_label, {alabel, ErrorMsg1}})
+  end,
+  case punycode:encode(ULabel) of
+    Puny -> ULabel;
+    _ ->
+      ErrorMsg2 = error_msg("The label ~p is not the canonical encoding of ~ts", [ALabel, ULabel]),
+      erlang:exit({bad_label, {alabel, ErrorMsg2}})
+  end.
+
+%% Validate a U-label (or a plain ASCII label). Bidi rules are checked per
+%% domain by check_bidi_domain/1.
+validate_label(Label, #{uts46 := true} = Opts) ->
+  check_uts46_label(Label, Opts);
+validate_label(Label, _Opts) ->
+  ok = check_nfc(Label),
+  ok = check_hyphen(Label, true),
+  ok = check_initial_combiner(Label),
+  ok = check_context(Label, true).
+
+%% UTS #46 Section 4.1 Validity Criteria, with CheckHyphens, CheckJoiners
+%% and CheckBidi set. CONTEXTO rules are not applied: UTS #46 leaves them
+%% optional for lookup.
+check_uts46_label(Label, #{transitional := Transitional, std3_rules := STD3Rules}) ->
+  ok = check_nfc(Label),                         % V1
+  ok = check_hyphen(Label, true),                % V2, V3
+  ok = check_no_full_stop(Label),                % V5
+  ok = check_initial_combiner(Label),            % V6
+  ok = check_uts46_status(Label, Transitional, STD3Rules), % V7, U1
+  ok = check_joiners(Label, []).                 % V8
+
+check_no_full_stop(Label) ->
+  case lists:member($., Label) of
+    false -> ok;
+    true ->
+      ErrorMsg = error_msg("The label ~p contains a full stop", [Label]),
+      erlang:exit({bad_label, {full_stop, ErrorMsg}})
+  end.
+
+check_uts46_status([CP | Rest], Transitional, STD3Rules) ->
+  Status = try idna_mapping:uts46_map(CP)
+           catch error:badarg -> 'X'
+           end,
+  Valid = case Status of
+            'V' -> true;
+            {'D', _} -> not Transitional;
+            _ -> false
+          end,
+  case Valid of
+    false ->
+      ErrorMsg = error_msg("Codepoint ~p is not valid (UTS #46 status ~p)", [CP, Status]),
+      erlang:exit({bad_label, {uts46_status, ErrorMsg}});
+    true when STD3Rules, CP < 128 ->
+      ok = check_std3_ascii(CP),
+      check_uts46_status(Rest, Transitional, STD3Rules);
+    true ->
+      check_uts46_status(Rest, Transitional, STD3Rules)
+  end;
+check_uts46_status([], _, _) ->
+  ok.
+
+%% UseSTD3ASCIIRules: ASCII code points must be a-z, 0-9 or hyphen-minus.
+check_std3_ascii(CP) when CP >= $a, CP =< $z -> ok;
+check_std3_ascii(CP) when CP >= $0, CP =< $9 -> ok;
+check_std3_ascii($-) -> ok;
+check_std3_ascii(CP) ->
+  ErrorMsg = error_msg("Codepoint ~p is not allowed by STD3 rules", [CP]),
+  erlang:exit({bad_label, {std3_rules, ErrorMsg}}).
+
+%% CONTEXTJ rules (RFC 5892 Appendix A.1, A.2) for every joiner in a label.
+check_joiners([CP | After], RevBefore) when CP =:= 16#200C; CP =:= 16#200D ->
+  case idna_context:valid_contextj_at(CP, RevBefore, After) of
+    true -> check_joiners(After, [CP | RevBefore]);
+    false ->
+      ErrorMsg = error_msg("Joiner ~p not allowed at position ~p", [CP, length(RevBefore)]),
+      erlang:exit({bad_label, {contextj, ErrorMsg}})
+  end;
+check_joiners([CP | After], RevBefore) ->
+  check_joiners(After, [CP | RevBefore]);
+check_joiners([], _) ->
+  ok.
+
+%% RFC 5893 Section 2: in a Bidi domain name (one with at least one R, AL
+%% or AN character), every label must satisfy the Bidi rule, including the
+%% left-to-right ones.
+check_bidi_domain(ULabels) ->
+  case lists:any(fun idna_bidi:has_rtl/1, ULabels) of
+    true -> lists:foreach(fun(L) -> ok = idna_bidi:check_bidi(L, true) end, ULabels);
+    false -> ok
+  end.
+
+is_ascii(Label) ->
+  lists:all(fun(C) -> idna_ucs:is_ascii(C) end, Label).
 
 %%--------------------------------------------------------------------
 %% @doc Check that a label is in Unicode Normalization Form C (NFC).
@@ -405,52 +574,46 @@ check_initial_combiner([CP|_]) ->
 -spec check_context(Label) -> ok when
       Label :: label().
 check_context(Label) ->
-  check_context(Label, Label, true, 0).
+  check_context(Label, true).
 
 %% @private
 check_context(Label, CheckJoiners) ->
-  check_context(Label, Label, CheckJoiners, 0).
+  check_context(Label, [], Label, undefined, CheckJoiners).
 
-%% @private
-check_context([CP | Rest], Label, CheckJoiners, Pos) ->
+%% Walk the label once, carrying the code points already seen in reverse
+%% so each contextual rule only looks at its neighbours. Label-wide facts
+%% for the CONTEXTO rules are computed the first time they are needed.
+check_context([CP | After], RevBefore, Label, Facts, CheckJoiners) ->
   case idna_table:lookup(CP) of
     'PVALID' ->
-      check_context(Rest, Label, CheckJoiners, Pos + 1);
-    'CONTEXTJ' ->
-        ok =  valid_contextj(CP, Label, Pos, CheckJoiners),
-        check_context(Rest, Label, CheckJoiners, Pos + 1);
-    'CONTEXTO' ->
-      ok =  valid_contexto(CP, Label, Pos, CheckJoiners),
-      check_context(Rest, Label, CheckJoiners, Pos + 1);
-    _Status ->
-      ErrorMsg = error_msg("Codepoint ~p not allowed (~p) at position ~p in ~p", [CP, _Status, Pos, Label]),
+      check_context(After, [CP | RevBefore], Label, Facts, CheckJoiners);
+    'CONTEXTJ' when CheckJoiners ->
+      case idna_context:valid_contextj_at(CP, RevBefore, After) of
+        true ->
+          check_context(After, [CP | RevBefore], Label, Facts, CheckJoiners);
+        false ->
+          ErrorMsg = error_msg("Joiner ~p not allowed at position ~p in ~p", [CP, length(RevBefore), Label]),
+          erlang:exit({bad_label, {contextj, ErrorMsg}})
+      end;
+    'CONTEXTO' when CheckJoiners ->
+      Facts1 = case Facts of
+                 undefined -> idna_context:label_facts(Label);
+                 _ -> Facts
+               end,
+      case idna_context:valid_contexto_at(CP, RevBefore, After, Facts1) of
+        true ->
+          check_context(After, [CP | RevBefore], Label, Facts1, CheckJoiners);
+        false ->
+          ErrorMsg = error_msg("Codepoint ~p not allowed in this context at position ~p in ~p", [CP, length(RevBefore), Label]),
+          erlang:exit({bad_label, {contexto, ErrorMsg}})
+      end;
+    Status when Status =:= 'CONTEXTJ'; Status =:= 'CONTEXTO' ->
+      check_context(After, [CP | RevBefore], Label, Facts, CheckJoiners);
+    Status ->
+      ErrorMsg = error_msg("Codepoint ~p not allowed (~p) at position ~p in ~p", [CP, Status, length(RevBefore), Label]),
       erlang:exit({bad_label, {context, ErrorMsg}})
   end;
-check_context([], _, _, _) ->
-  ok.
-
-%% @private
-valid_contextj(CP, Label, Pos, true) ->
-  case idna_context:valid_contextj(CP, Label, Pos) of
-    true ->
-      ok;
-    false ->
-      ErrorMsg = error_msg("Joiner ~p not allowed at position ~p in ~p", [CP, Pos, Label]),
-      erlang:exit({bad_label, {contextj, ErrorMsg}})
-  end;
-valid_contextj(_CP, _Label, _Pos, false) ->
-  ok.
-
-%% @private
-valid_contexto(CP, Label, Pos, true) ->
-  case idna_context:valid_contexto(CP, Label, Pos) of
-    true ->
-      ok;
-    false ->
-      ErrorMsg = error_msg("Joiner ~p not allowed at position ~p in ~p", [CP, Pos, Label]),
-      erlang:exit({bad_label, {contexto, ErrorMsg}})
-  end;
-valid_contexto(_CP, _Label, _Pos, false) ->
+check_context([], _, _, _, _) ->
   ok.
 
 %%--------------------------------------------------------------------
@@ -540,36 +703,11 @@ check_label_length(_) ->
 -spec alabel(Label) -> ALabel when
       Label :: label(),
       ALabel :: label().
-alabel(Label0) ->
-  Label = case lists:all(fun(C) -> idna_ucs:is_ascii(C) end, Label0) of
-            true ->
-              ok = check_label_length(Label0),
-              _ = try ulabel(Label0)
-                  catch
-                    _:Error ->
-                      ErrorMsg = error_msg("The label ~p  is not a valid A-label: ulabel error=~p", [Label0, Error]),
-                      erlang:exit({bad_label, {alabel, ErrorMsg}})
-                  end,
-
-              Label0;
-            false ->
-              ok = check_label(Label0),
-              %% Every code point needs at least one output character, so a
-              %% label longer than 63 code points can never be a valid
-              %% A-label. Reject it before the (superlinear) encoding.
-              ok = check_label_length(Label0),
-              ?ACE_PREFIX ++ punycode:encode(Label0)
-          end,
-  ok = check_label_length(Label),
-  Label.
-
-%% @private
-decode_1([], Acc) ->
-  lists:reverse(Acc);
-decode_1([Label|Labels], []) ->
-  decode_1(Labels, lists:reverse(ulabel(Label)));
-decode_1([Label|Labels], Acc) ->
-  decode_1(Labels, lists:reverse(ulabel(Label), [$.|Acc])).
+alabel([]) -> [];
+alabel(Label) ->
+  {ALabel, ULabel} = encode_label(Label, default_options()),
+  ok = idna_bidi:check_bidi(ULabel),
+  ALabel.
 
 %%--------------------------------------------------------------------
 %% @doc Convert a label to its Unicode form (U-label).
@@ -591,25 +729,10 @@ decode_1([Label|Labels], Acc) ->
       ALabel :: label(),
       Label :: label().
 ulabel([]) -> [];
-ulabel(Label0) ->
-  Label = case lists:all(fun(C) -> idna_ucs:is_ascii(C) end, Label0) of
-            true ->
-              %% An A-label is a DNS label, so it is at most 63 octets.
-              %% Check this before decoding: the Punycode transform is
-              %% superlinear in the label length, and an unbounded
-              %% label would let a caller burn CPU on invalid input.
-              ok = check_label_length(Label0),
-              case Label0 of
-                [$x,$n,$-,$-|Label1] ->
-                  punycode:decode(lowercase(Label1));
-                _ ->
-                  lowercase(Label0)
-              end;
-            false ->
-              lowercase(Label0)
-          end,
-  ok = check_label(Label),
-  Label.
+ulabel(Label) ->
+  ULabel = decode_label(lowercase(Label), default_options()),
+  ok = idna_bidi:check_bidi(ULabel),
+  ULabel.
 
 %% Lowercase all chars in Str
 -spec lowercase(String::unicode:chardata()) -> unicode:chardata().
