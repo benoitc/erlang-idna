@@ -1,6 +1,6 @@
 {application, idna, [
   {description, "A pure Erlang IDNA implementation"},
-  {vsn, "7.1.0"},
+  {vsn, "8.0.0"},
   {modules, []},
   {registered, []},
   {applications, [kernel, stdlib]},

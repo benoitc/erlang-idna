@@ -1,6 +1,6 @@
 # CHANGELOG
 
-== unreleased
+== 8.0.0 - 2026-11-12
 
 - the UTF-8 helpers now only accept and produce valid Unicode characters. Before, surrogates and values above U+10FFFF were decoded or encoded into invalid UTF-8, and U+FFFE and U+FFFF crashed the encoder. A list given as UTF-8 must now contain bytes: other values such as -1 or code points above 255 used to pass through or decode to the wrong name.
 - the Punycode decoder now rejects malformed input that it used to accept, such as non-ASCII characters before the delimiter, a leading delimiter, values that are not Unicode characters, or input cut off in the middle of a character, which crashed with function_clause. Valid input decodes exactly as before.
