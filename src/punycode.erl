@@ -109,11 +109,18 @@ to_digit(_) -> exit(badarg).
 %% the DNS limit on domain name labels.
 -spec decode(string()) -> string().
 decode(Input) ->
+  %% RFC 3492 Section 6.2: copy the code points before the last delimiter
+  %% to the output, failing on any non-basic one. The delimiter itself is
+  %% only consumed when at least one code point came before it, so a
+  %% leading "-" is left in the input and fails as a digit.
   {Output, Input2} = case string:rstr(Input, [?DELIMITER]) of
-             0 -> {"", Input};
-             Pos ->
-               {lists:sublist(Input, Pos - 1), lists:sublist(Input, Pos + 1, length(Input) )}
+             Pos when Pos > 1 ->
+               {lists:sublist(Input, Pos - 1), lists:nthtail(Pos, Input)};
+             _ ->
+               {"", Input}
            end,
+  lists:all(fun(C) -> is_integer(C) andalso C >= 0 andalso C < ?INITIAL_N end, Output)
+    orelse exit(badarg),
   decode(Input2, Output, ?INITIAL_N, ?INITIAL_BIAS, 0).
 
 decode([], Output, _, _, _) -> Output;
@@ -141,6 +148,8 @@ decode([C|Rest], Output, N, Bias, I0, OldI, Weight, K) ->
                   true ->
                     exit(overflow)
                 end,
+      %% The decoded value must be a Unicode scalar value.
+      (N2 =< 16#10FFFF andalso (N2 < 16#D800 orelse N2 > 16#DFFF)) orelse exit(badarg),
       Output2 = insert(Output, N2, I2),
       decode(Rest, Output2, N2, Bias2, I2+1);
     false ->

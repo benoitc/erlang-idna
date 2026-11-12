@@ -11,7 +11,7 @@ A pure Erlang IDNA implementation following [RFC 5891](https://tools.ietf.org/ht
 ## Features
 
 - **IDNA 2008** compliance with [RFC 5891](https://tools.ietf.org/html/rfc5891)
-- **IDNA 2003** backward compatibility
+- **IDNA 2003** compatibility through UTS #46 transitional processing (`[uts46, transitional]`), for example `faß.de` to `fass.de`. Nameprep (RFC 3491) is not implemented, and `to_ascii/1` and `to_unicode/1` use IDNA 2008 processing like `encode/1` and `decode/1`.
 - **UTS #46** compatibility processing ([Unicode Technical Standard #46](https://unicode.org/reports/tr46/))
 - Full label validation:
   - NFC normalization check

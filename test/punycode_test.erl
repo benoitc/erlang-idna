@@ -169,3 +169,13 @@ punycode_long_label_round_trip_test_() ->
     ?assert(Us2 < 1000000),
     ?assertEqual(Input, Decoded)
   end}.
+
+%% RFC 3492 Section 6.2: the code points before the last delimiter must be
+%% basic, and the delimiter is only consumed when something precedes it.
+punycode_strict_decode_test() ->
+  ?assertExit(badarg, punycode:decode([233, $-, $a])),
+  ?assertExit(badarg, punycode:decode("-a")),
+  ?assertEqual("abc", punycode:decode("abc-")),
+  %% A decoded value must be a Unicode scalar value.
+  ?assertExit(badarg, punycode:decode(punycode:encode([16#D800]))),
+  ?assertEqual([16#10FFFF], punycode:decode(punycode:encode([16#10FFFF]))).

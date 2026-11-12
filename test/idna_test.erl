@@ -379,3 +379,13 @@ context_rules_linear_test_() ->
      end),
      ?assert(Us < 500000)
    end}} || {Name, Label} <- Cases].
+
+%% RFC 3629: UTF-8 carries Unicode scalar values only.
+utf8_scalar_values_test() ->
+  ?assertExit({ucs, _}, idna_ucs:from_utf8([16#ED, 16#A0, 16#80])),
+  ?assertExit({ucs, _}, idna_ucs:from_utf8([16#F4, 16#90, 16#80, 16#80])),
+  ?assertEqual([16#10FFFF], idna_ucs:from_utf8([16#F4, 16#8F, 16#BF, 16#BF])),
+  ?assertExit({ucs, _}, idna_ucs:to_utf8(16#D800)),
+  ?assertExit({ucs, _}, idna_ucs:to_utf8(16#110000)),
+  ?assertEqual([16#EF, 16#BF, 16#BE], idna_ucs:to_utf8(16#FFFE)),
+  ?assertExit({ucs, _}, idna:utf8_to_ascii([16#ED, 16#A0, 16#80])).
