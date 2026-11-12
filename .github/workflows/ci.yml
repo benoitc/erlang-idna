@@ -17,6 +17,7 @@ jobs:
         otp:
           - '27.2'
           - '28.0'
+          - '29'
 
     steps:
       - uses: actions/checkout@v4
@@ -25,7 +26,7 @@ jobs:
         uses: erlef/setup-beam@v1
         with:
           otp-version: ${{ matrix.otp }}
-          rebar3-version: '3.24'
+          rebar3-version: '3.28.0'
 
       - name: Restore dependencies cache
         uses: actions/cache@v4
