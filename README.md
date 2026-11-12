@@ -6,7 +6,7 @@
 
 A pure Erlang IDNA implementation following [RFC 5891](https://tools.ietf.org/html/rfc5891).
 
-**Current Unicode version: 17.0.0**
+**Current Unicode version: 18.0.0**
 
 ## Features
 
@@ -153,11 +153,11 @@ rebar3 ex_doc
 
 ## Updating Unicode Data
 
-This library currently supports **Unicode 17.0.0**. To update to a new Unicode version:
+This library currently supports **Unicode 18.0.0**. To update to a new Unicode version:
 
 ### 1. Download Unicode Data Files
 
-Replace `VERSION` with the target version (e.g., `17.0.0`):
+Replace `VERSION` with the target version (e.g., `18.0.0`):
 
 ```bash
 # Core Unicode data files
@@ -165,26 +165,20 @@ wget -O uc_spec/UnicodeData.txt https://www.unicode.org/Public/VERSION/ucd/Unico
 wget -O uc_spec/ArabicShaping.txt https://www.unicode.org/Public/VERSION/ucd/ArabicShaping.txt
 wget -O uc_spec/Scripts.txt https://www.unicode.org/Public/VERSION/ucd/Scripts.txt
 
-# IDNA-specific files (path structure as of Unicode 17.0.0)
+# IDNA-specific files (path structure as of Unicode 18.0.0)
 wget -O uc_spec/IdnaMappingTable.txt https://www.unicode.org/Public/VERSION/idna/IdnaMappingTable.txt
 wget -O test/IdnaTestV2.txt https://www.unicode.org/Public/VERSION/idna/IdnaTestV2.txt
 ```
 
-### 2. Generate IDNA Table
+### 2. Download the IDNA2008 Table
 
-Use the [kjd/idna](https://github.com/kjd/idna) Python tool:
-
-```bash
-git clone --depth 1 https://github.com/kjd/idna.git /tmp/kjd-idna
-python3 /tmp/kjd-idna/tools/idna-data make-table --version VERSION > uc_spec/idna-table.txt
-rm -rf /tmp/kjd-idna
-```
-
-If the tool needs additional files, use the `--source` option:
+Unicode publishes the RFC 5892 derived property values for each version:
 
 ```bash
-python3 /tmp/kjd-idna/tools/idna-data make-table --version VERSION --source uc_spec > uc_spec/idna-table.txt
+wget -O uc_spec/idna-table.txt https://www.unicode.org/Public/VERSION/idna/Idna2008.txt
 ```
+
+Then check the `@missing` lines of `https://www.unicode.org/Public/VERSION/ucd/extracted/DerivedBidiClass.txt` against `BIDI_CLASS_DEFAULTS` in `uc_spec/gen_idnadata_mod.escript`, and update the list if they changed.
 
 ### 3. Regenerate Erlang Modules
 

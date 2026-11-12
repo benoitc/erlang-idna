@@ -2,6 +2,7 @@
 
 == unreleased
 
+- update to Unicode 18.0.0.
 - fix slow rejection of over-long labels: a label longer than 63 characters was fully Punycode-converted before being rejected, so a single long hostname label could keep the CPU busy for seconds or minutes. It is now rejected right away.
 - Punycode encoding and decoding are much faster on long inputs.
 - fix names with a zero width non-joiner (common in Persian and other Arabic-script languages): valid names were always rejected.

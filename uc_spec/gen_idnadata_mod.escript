@@ -24,26 +24,29 @@
 %%
 %% Ref: <https://www.unicode.org/Public/UNIDATA/extracted/DerivedBidiClass.txt>
 -define(BIDI_CLASS_DEFAULTS, [
+  %% The @missing lines of DerivedBidiClass-18.0.0.txt.
   {{16#0600, 16#07BF}, "AL"},
-  {{16#0860, 16#086F}, "AL"},
-  {{16#08A0, 16#08FF}, "AL"},
+  {{16#0860, 16#08FF}, "AL"},
   {{16#FB50, 16#FDCF}, "AL"},
   {{16#FDF0, 16#FDFF}, "AL"},
   {{16#FE70, 16#FEFF}, "AL"},
   {{16#00010D00, 16#00010D3F}, "AL"},
+  {{16#00010EC0, 16#00010EFF}, "AL"},
   {{16#00010F30, 16#00010F6F}, "AL"},
   {{16#0001EC70, 16#0001ECBF}, "AL"},
+  {{16#0001ED00, 16#0001ED4F}, "AL"},
   {{16#0001EE00, 16#0001EEFF}, "AL"},
   %% Arabic, Syriac, and Thaana blocks, among others
   {{16#0590, 16#05FF}, "R"},
   {{16#07C0, 16#085F}, "R"},
-  {{16#0870, 16#089F}, "R"},
   {{16#FB1D, 16#FB4F}, "R"},
   {{16#00010800, 16#00010CFF}, "R"},
-  {{16#00010D40, 16#00010F2F}, "R"},
+  {{16#00010D40, 16#00010EBF}, "R"},
+  {{16#00010F00, 16#00010F2F}, "R"},
   {{16#00010F70, 16#00010FFF}, "R"},
   {{16#0001E800, 16#0001EC6F}, "R"},
-  {{16#0001ECC0, 16#0001EDFF}, "R"},
+  {{16#0001ECC0, 16#0001ECFF}, "R"},
+  {{16#0001ED50, 16#0001EDFF}, "R"},
   {{16#0001EF00, 16#0001EFFF}, "R"},
   %% Hebrew, NKo, and Phoenician blocks, among others.
   {{16#20A0, 16#20CF}, "ET"}
