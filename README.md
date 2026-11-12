@@ -164,6 +164,9 @@ Replace `VERSION` with the target version (e.g., `18.0.0`):
 wget -O uc_spec/UnicodeData.txt https://www.unicode.org/Public/VERSION/ucd/UnicodeData.txt
 wget -O uc_spec/ArabicShaping.txt https://www.unicode.org/Public/VERSION/ucd/ArabicShaping.txt
 wget -O uc_spec/Scripts.txt https://www.unicode.org/Public/VERSION/ucd/Scripts.txt
+wget -O uc_spec/CompositionExclusions.txt https://www.unicode.org/Public/VERSION/ucd/CompositionExclusions.txt
+wget -O uc_spec/SpecialCasing.txt https://www.unicode.org/Public/VERSION/ucd/SpecialCasing.txt
+wget -O test/NormalizationTest.txt https://www.unicode.org/Public/VERSION/ucd/NormalizationTest.txt
 
 # IDNA-specific files (path structure as of Unicode 18.0.0)
 wget -O uc_spec/IdnaMappingTable.txt https://www.unicode.org/Public/VERSION/idna/IdnaMappingTable.txt
@@ -181,6 +184,8 @@ wget -O uc_spec/idna-table.txt https://www.unicode.org/Public/VERSION/idna/Idna2
 Then check the `@missing` lines of `https://www.unicode.org/Public/VERSION/ucd/extracted/DerivedBidiClass.txt` against `BIDI_CLASS_DEFAULTS` in `uc_spec/gen_idnadata_mod.escript`, and update the list if they changed.
 
 ### 3. Regenerate Erlang Modules
+
+Normalization (NFC) and lowercasing use tables generated from these files, not OTP's Unicode data, so the library gives the same results on every supported OTP release.
 
 ```bash
 cd uc_spec

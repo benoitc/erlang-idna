@@ -3,6 +3,7 @@
 == unreleased
 
 - update to Unicode 18.0.0.
+- normalization and lowercasing now use Unicode data shipped with idna instead of the data of the OTP release. Before, results depended on the OTP version: OTP 28 and 29 normalized some characters added in recent Unicode versions incorrectly, so the same name could be accepted or encoded differently depending on where it ran.
 - fix slow rejection of over-long labels: a label longer than 63 characters was fully Punycode-converted before being rejected, so a single long hostname label could keep the CPU busy for seconds or minutes. It is now rejected right away.
 - Punycode encoding and decoding are much faster on long inputs.
 - fix names with a zero width non-joiner (common in Persian and other Arabic-script languages): valid names were always rejected.

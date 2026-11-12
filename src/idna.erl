@@ -56,12 +56,6 @@
 
 -define(ACE_PREFIX, "xn--").
 
--ifdef('OTP_RELEASE').
--define(lower(C), string:lowercase(C)).
--else.
--define(lower(C), string:to_lower(C)).
--endif.
-
 -include("idna_logger.hrl").
 
 %%--------------------------------------------------------------------
@@ -734,76 +728,17 @@ ulabel(Label) ->
   ok = idna_bidi:check_bidi(ULabel),
   ULabel.
 
-%% Lowercase all chars in Str
+%% Lowercase all chars in Str. Uses the case tables generated with the
+%% IDNA data rather than OTP's, so the result does not depend on the
+%% Unicode version of the OTP release.
 -spec lowercase(String::unicode:chardata()) -> unicode:chardata().
 lowercase(CD) when is_list(CD) ->
-  try lowercase_list(CD, false)
-  catch unchanged -> CD
-  end;
-lowercase(<<CP1/utf8, Rest/binary>>=Orig) ->
-  try lowercase_bin(CP1, Rest, false) of
-    List -> unicode:characters_to_binary(List)
-  catch unchanged -> Orig
-  end;
-lowercase(<<>>) ->
-  <<>>.
+  idna_nfc:lowercase(CD);
+lowercase(Bin) when is_binary(Bin) ->
+  unicode:characters_to_binary(idna_nfc:lowercase(unicode:characters_to_list(Bin))).
 
-
-lowercase_list([CP1|[CP2|_]=Cont], _Changed) when $A =< CP1, CP1 =< $Z, CP2 < 256 ->
-  [CP1+32|lowercase_list(Cont, true)];
-lowercase_list([CP1|[CP2|_]=Cont], Changed) when CP1 < 128, CP2 < 256 ->
-  [CP1|lowercase_list(Cont, Changed)];
-lowercase_list([], true) ->
-  [];
-lowercase_list([], false) ->
-  throw(unchanged);
-lowercase_list(CPs0, Changed) ->
-  case unicode_util:lowercase(CPs0) of
-    [Char|CPs] when Char =:= hd(CPs0) -> [Char|lowercase_list(CPs, Changed)];
-    [Char|CPs] -> append(Char,lowercase_list(CPs, true));
-    [] -> lowercase_list([], Changed)
-  end.
-
-lowercase_bin(CP1, <<CP2/utf8, Bin/binary>>, _Changed)
-  when $A =< CP1, CP1 =< $Z, CP2 < 256 ->
-  [CP1+32|lowercase_bin(CP2, Bin, true)];
-lowercase_bin(CP1, <<CP2/utf8, Bin/binary>>, Changed)
-  when CP1 < 128, CP2 < 256 ->
-  [CP1|lowercase_bin(CP2, Bin, Changed)];
-lowercase_bin(CP1, Bin, Changed) ->
-  case unicode_util:lowercase([CP1|Bin]) of
-    [CP1|CPs] ->
-      case unicode_util:cp(CPs) of
-        [Next|Rest] ->
-          [CP1|lowercase_bin(Next, Rest, Changed)];
-        [] when Changed ->
-          [CP1];
-        [] ->
-          throw(unchanged)
-      end;
-    [Char|CPs] ->
-      case unicode_util:cp(CPs) of
-        [Next|Rest] ->
-          [Char|lowercase_bin(Next, Rest, true)];
-        [] ->
-          [Char]
-      end
-  end.
-
-
-append(Char, <<>>) when is_integer(Char) -> [Char];
-append(Char, <<>>) when is_list(Char) -> Char;
-append(Char, Bin) when is_binary(Bin) -> [Char,Bin];
-append(Char, Str) when is_integer(Char) -> [Char|Str];
-append(GC, Str) when is_list(GC) -> GC ++ Str.
-
-
-characters_to_nfc_list(CD) ->
-  case unicode_util:nfc(CD) of
-    [CPs|Str] when is_list(CPs) -> CPs ++ characters_to_nfc_list(Str);
-    [CP|Str] -> [CP|characters_to_nfc_list(Str)];
-    [] -> []
-  end.
+characters_to_nfc_list(CPs) ->
+  idna_nfc:nfc(CPs).
 
 
 uts46_remap(Str, Std3Rules, Transitional) ->
